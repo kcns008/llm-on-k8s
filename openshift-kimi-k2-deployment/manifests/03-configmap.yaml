@@ -1,0 +1,29 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimi-k2-config
+  namespace: llm-models
+  labels:
+    app: kimi-k2
+data:
+  # Model configuration
+  MODEL_NAME: "moonshotai/Kimi-K2-Instruct"
+  SERVED_MODEL_NAME: "kimi-k2"
+
+  # vLLM settings for Tesla T4 (16GB VRAM)
+  # Using quantization and CPU offloading for T4
+  GPU_MEMORY_UTILIZATION: "0.90"
+  MAX_MODEL_LEN: "8192"  # Reduce context length for T4
+  TENSOR_PARALLEL_SIZE: "1"  # Single T4 GPU
+
+  # API settings
+  HOST: "0.0.0.0"
+  PORT: "8000"
+
+  # Performance tuning
+  SWAP_SPACE: "16"  # GB of CPU swap space
+  ENFORCE_EAGER: "false"
+
+  # Logging
+  LOG_LEVEL: "info"

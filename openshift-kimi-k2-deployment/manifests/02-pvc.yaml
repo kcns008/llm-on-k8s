@@ -1,0 +1,33 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k2-model-cache
+  namespace: llm-models
+  labels:
+    app: kimi-k2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Kimi K2 model requires ~250GB for quantized version
+      # Requesting 300GB to have buffer for cache and other files
+      storage: 300Gi
+  # Uncomment and modify if you have a specific storage class
+  # storageClassName: fast-ssd
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k2-shm
+  namespace: llm-models
+  labels:
+    app: kimi-k2
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Shared memory for vLLM
+      storage: 10Gi
