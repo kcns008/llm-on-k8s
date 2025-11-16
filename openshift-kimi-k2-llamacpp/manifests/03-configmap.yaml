@@ -1,0 +1,58 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimi-k2-llamacpp-config
+  namespace: llm-models-llamacpp
+  labels:
+    app: kimi-k2-llamacpp
+    component: configuration
+data:
+  # Model Configuration
+  # Use either Thinking or Instruct model
+  MODEL_REPO: "unsloth/Kimi-K2-Thinking-GGUF"
+  # Alternative: "unsloth/Kimi-K2-Instruct-GGUF"
+
+  # Quantization type - controls model size vs accuracy tradeoff
+  # UD-TQ1_0: 1.8-bit, 247GB (smallest, fits T4 with MoE offloading)
+  # UD-Q2_K_XL: 2-bit, 381GB (recommended balance)
+  # UD-Q4_K_XL: 4-bit, 588GB (higher quality)
+  QUANT_TYPE: "UD-TQ1_0"
+
+  # Server Configuration
+  HOST: "0.0.0.0"
+  PORT: "8001"
+
+  # Model Settings for Kimi-K2-Thinking
+  # Set temperature to 1.0 for Thinking model (reduces repetition)
+  # Set temperature to 0.6 for Instruct model
+  TEMPERATURE: "1.0"
+
+  # Minimum probability threshold (suppress unlikely tokens)
+  MIN_P: "0.01"
+
+  # Context size (max 98304 for Thinking, but start with 16384 for T4)
+  CTX_SIZE: "16384"
+
+  # GPU Configuration
+  # Number of layers to offload to GPU (99 = all non-MoE layers)
+  N_GPU_LAYERS: "99"
+
+  # MoE CPU offloading pattern
+  # ".ffn_.*_exps.=CPU" - Offload ALL MoE layers (uses least VRAM, ~8GB)
+  # ".ffn_(up|down)_exps.=CPU" - Offload up+down MoE layers (needs more VRAM)
+  # ".ffn_(up)_exps.=CPU" - Offload only up MoE layers (needs even more VRAM)
+  # Remove for full GPU (needs 247GB+ VRAM)
+  MoE_OFFLOAD: ".ffn_.*_exps.=CPU"
+
+  # CPU threads (-1 = auto-detect max threads)
+  THREADS: "-1"
+
+  # Flash Attention (on for better performance)
+  FLASH_ATTN: "on"
+
+  # Served model name (for OpenAI API compatibility)
+  SERVED_MODEL_NAME: "kimi-k2-thinking"
+
+  # Random seed for reproducibility
+  SEED: "3407"

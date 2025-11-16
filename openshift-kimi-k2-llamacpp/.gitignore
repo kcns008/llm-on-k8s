@@ -1,0 +1,25 @@
+# Secrets - never commit real tokens
+**/04-secret.yaml
+
+# Local testing and customizations
+*.local.yaml
+test-*.yaml
+*-local.yaml
+
+# Downloaded model files
+*.gguf
+model-cache/
+*.bin
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Temp and log files
+*.log
+tmp/
+.tmp/

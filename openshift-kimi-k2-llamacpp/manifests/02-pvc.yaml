@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k2-gguf-cache
+  namespace: llm-models-llamacpp
+  labels:
+    app: kimi-k2-llamacpp
+    component: storage
+  annotations:
+    description: "Storage for GGUF model files (UD-TQ1_0: ~247GB, UD-Q2_K_XL: ~381GB)"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # Minimum 300GB for UD-TQ1_0 quant (247GB)
+      # Recommend 400GB for UD-Q2_K_XL quant (381GB)
+      storage: 400Gi
+  # Uncomment and specify storage class if needed
+  # storageClassName: gp3-csi
+  volumeMode: Filesystem

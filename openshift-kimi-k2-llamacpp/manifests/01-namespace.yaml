@@ -1,0 +1,11 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-models-llamacpp
+  labels:
+    name: llm-models-llamacpp
+    purpose: llm-inference
+    engine: llamacpp
+  annotations:
+    description: "Namespace for Kimi K2 LLM inference using llama.cpp and GGUF models"

@@ -1,0 +1,375 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k2-llamacpp
+  namespace: llm-models-llamacpp
+  labels:
+    app: kimi-k2-llamacpp
+    component: inference-server
+    engine: llamacpp
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Important for GPU workloads and persistent storage
+  selector:
+    matchLabels:
+      app: kimi-k2-llamacpp
+      component: inference-server
+  template:
+    metadata:
+      labels:
+        app: kimi-k2-llamacpp
+        component: inference-server
+        engine: llamacpp
+      annotations:
+        description: "Kimi K2 LLM inference using llama.cpp with GGUF models"
+    spec:
+      # Security context for OpenShift
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Node selector for GPU nodes
+      nodeSelector:
+        # Uncomment and modify based on your cluster's GPU node labels
+        # nvidia.com/gpu.present: "true"
+        # node.kubernetes.io/instance-type: Standard_NC4as_T4_v3
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      # Init containers
+      initContainers:
+      # 1. Build llama.cpp with CUDA support
+      - name: build-llamacpp
+        image: nvidia/cuda:12.1.0-devel-ubuntu22.04
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -e
+
+            # Check if llama.cpp already exists
+            if [ -f /llamacpp/llama-server ]; then
+              echo "llama.cpp already built, skipping..."
+              exit 0
+            fi
+
+            echo "Installing build dependencies..."
+            apt-get update
+            apt-get install -y pciutils build-essential cmake curl libcurl4-openssl-dev git
+
+            echo "Cloning llama.cpp..."
+            cd /tmp
+            git clone https://github.com/ggml-org/llama.cpp
+
+            echo "Building llama.cpp with CUDA support..."
+            cmake llama.cpp -B llama.cpp/build \
+                -DBUILD_SHARED_LIBS=OFF \
+                -DGGML_CUDA=ON \
+                -DLLAMA_CURL=ON
+
+            cmake --build llama.cpp/build --config Release -j \
+                --clean-first \
+                --target llama-server llama-cli
+
+            echo "Copying binaries..."
+            mkdir -p /llamacpp
+            cp llama.cpp/build/bin/llama-server /llamacpp/
+            cp llama.cpp/build/bin/llama-cli /llamacpp/
+            chmod +x /llamacpp/llama-*
+
+            echo "llama.cpp build complete!"
+            ls -lh /llamacpp/
+        volumeMounts:
+          - name: llamacpp-bin
+            mountPath: /llamacpp
+        resources:
+          requests:
+            memory: 4Gi
+            cpu: 2
+          limits:
+            memory: 8Gi
+            cpu: 4
+
+      # 2. Download GGUF model
+      - name: model-downloader
+        image: python:3.11-slim
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -e
+
+            # Check if model already exists
+            MODEL_PATH="/model-cache/${MODEL_REPO}/${QUANT_TYPE}"
+            if [ -d "$MODEL_PATH" ] && [ "$(ls -A $MODEL_PATH/*.gguf 2>/dev/null)" ]; then
+              echo "Model already downloaded at $MODEL_PATH, skipping..."
+              exit 0
+            fi
+
+            echo "Installing dependencies..."
+            pip install -q huggingface-hub hf-transfer
+
+            echo "Downloading GGUF model: ${MODEL_REPO} (${QUANT_TYPE})"
+            echo "This may take 30-60 minutes depending on network speed..."
+
+            python3 << 'PYEOF'
+            import os
+            from huggingface_hub import snapshot_download
+
+            model_repo = os.environ['MODEL_REPO']
+            quant_type = os.environ['QUANT_TYPE']
+            hf_token = os.environ.get('HF_TOKEN')
+
+            # Download only the specific quantization
+            pattern = f"*{quant_type}*"
+
+            print(f"Downloading {model_repo} with pattern: {pattern}")
+            print(f"Target directory: /model-cache/{model_repo}")
+
+            snapshot_download(
+                repo_id=model_repo,
+                local_dir=f"/model-cache/{model_repo}",
+                allow_patterns=[pattern],
+                token=hf_token,
+                resume_download=True,
+                local_files_only=False
+            )
+
+            print("Model download complete!")
+            PYEOF
+
+            echo "Download finished!"
+            ls -lh /model-cache/${MODEL_REPO}/
+        env:
+          - name: MODEL_REPO
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: MODEL_REPO
+          - name: QUANT_TYPE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: QUANT_TYPE
+          - name: HF_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: huggingface-token
+                key: HF_TOKEN
+                optional: false
+        volumeMounts:
+          - name: model-cache
+            mountPath: /model-cache
+        resources:
+          requests:
+            memory: 4Gi
+            cpu: 2
+          limits:
+            memory: 8Gi
+            cpu: 4
+
+      # Main container: llama-server
+      containers:
+      - name: llama-server
+        # Using NVIDIA CUDA runtime image for GPU support
+        image: nvidia/cuda:12.1.0-runtime-ubuntu22.04
+        imagePullPolicy: IfNotPresent
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -e
+
+            # Install runtime dependencies
+            apt-get update
+            apt-get install -y libgomp1 curl
+
+            # Find the GGUF model file
+            MODEL_PATH=$(find /model-cache/${MODEL_REPO} -name "*${QUANT_TYPE}*00001*.gguf" | head -1)
+
+            if [ -z "$MODEL_PATH" ]; then
+              echo "ERROR: Could not find GGUF model file for ${QUANT_TYPE}"
+              echo "Contents of /model-cache/${MODEL_REPO}:"
+              ls -lR /model-cache/${MODEL_REPO}/
+              exit 1
+            fi
+
+            echo "Found model: $MODEL_PATH"
+            echo "Starting llama-server..."
+
+            # Build the MoE offload argument
+            MOE_ARG=""
+            if [ -n "$MOE_OFFLOAD" ]; then
+              MOE_ARG="-ot $MOE_OFFLOAD"
+            fi
+
+            # Start llama-server with OpenAI-compatible API
+            exec /llamacpp/llama-server \
+              --model "$MODEL_PATH" \
+              --alias "$SERVED_MODEL_NAME" \
+              --host "$HOST" \
+              --port "$PORT" \
+              --threads "$THREADS" \
+              -fa "$FLASH_ATTN" \
+              --n-gpu-layers "$N_GPU_LAYERS" \
+              $MOE_ARG \
+              --min-p "$MIN_P" \
+              --temp "$TEMPERATURE" \
+              --ctx-size "$CTX_SIZE" \
+              --seed "$SEED" \
+              --jinja
+
+        env:
+          - name: MODEL_REPO
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: MODEL_REPO
+          - name: QUANT_TYPE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: QUANT_TYPE
+          - name: HOST
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: HOST
+          - name: PORT
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: PORT
+          - name: TEMPERATURE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: TEMPERATURE
+          - name: MIN_P
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: MIN_P
+          - name: CTX_SIZE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: CTX_SIZE
+          - name: N_GPU_LAYERS
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: N_GPU_LAYERS
+          - name: MOE_OFFLOAD
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: MoE_OFFLOAD
+          - name: THREADS
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: THREADS
+          - name: FLASH_ATTN
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: FLASH_ATTN
+          - name: SERVED_MODEL_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: SERVED_MODEL_NAME
+          - name: SEED
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-llamacpp-config
+                key: SEED
+
+        ports:
+          - name: http
+            containerPort: 8001
+            protocol: TCP
+
+        resources:
+          requests:
+            # Tesla T4: 16GB VRAM
+            # With MoE offloading, only ~8GB VRAM needed
+            # But need significant RAM for offloaded layers
+            nvidia.com/gpu: 1
+            memory: 64Gi   # Large RAM for MoE layer offloading
+            cpu: 8
+          limits:
+            nvidia.com/gpu: 1
+            memory: 128Gi
+            cpu: 16
+
+        volumeMounts:
+          - name: model-cache
+            mountPath: /model-cache
+            readOnly: true
+          - name: llamacpp-bin
+            mountPath: /llamacpp
+            readOnly: true
+
+        # Health probes
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 120  # Model loading time
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 120
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30  # Allow up to 5 minutes for startup
+
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: kimi-k2-gguf-cache
+        - name: llamacpp-bin
+          emptyDir: {}
