@@ -1,0 +1,21 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: glm46-gguf-cache
+  namespace: llm-models-glm46
+  labels:
+    app: glm-4.6-llamacpp
+    component: storage
+  annotations:
+    description: "Storage for GLM-4.6 GGUF model files (135GB for UD-Q2_K_XL quant)"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      # UD-Q2_K_XL: 135GB, UD-TQ1_0: 84GB, Q4_K_XL: 204GB
+      # Requesting 200GB to accommodate different quants + headroom
+      storage: 200Gi
+  # Uncomment and modify based on your cluster's storage classes
+  # storageClassName: managed-premium

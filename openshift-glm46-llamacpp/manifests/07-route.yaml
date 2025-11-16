@@ -1,0 +1,30 @@
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: glm46-llamacpp
+  namespace: llm-models-glm46
+  labels:
+    app: glm-4.6-llamacpp
+    component: inference-server
+  annotations:
+    description: "External HTTPS access to GLM-4.6 llama.cpp inference API"
+    haproxy.router.openshift.io/timeout: "5m"
+    haproxy.router.openshift.io/balance: "roundrobin"
+spec:
+  # Uncomment to specify custom hostname
+  # host: glm46-llamacpp.apps.your-cluster.com
+
+  to:
+    kind: Service
+    name: glm46-llamacpp
+    weight: 100
+
+  port:
+    targetPort: http
+
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+  wildcardPolicy: None

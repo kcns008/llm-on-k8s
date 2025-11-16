@@ -1,0 +1,58 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: glm46-llamacpp-config
+  namespace: llm-models-glm46
+  labels:
+    app: glm-4.6-llamacpp
+    component: configuration
+data:
+  # Model Configuration
+  MODEL_REPO: "unsloth/GLM-4.6-GGUF"
+
+  # Quantization type - controls model size vs accuracy tradeoff
+  # UD-TQ1_0: 1.66-bit, 84GB (smallest, fits T4 with MoE offloading)
+  # UD-Q2_K_XL: 2.71-bit, 135GB (recommended balance) ⭐
+  # UD-Q4_K_XL: 4.5-bit, 204GB (higher quality)
+  # See: https://docs.unsloth.ai/models/glm-4.6-how-to-run-locally
+  QUANT_TYPE: "UD-Q2_K_XL"
+
+  # Server Configuration
+  HOST: "0.0.0.0"
+  PORT: "8001"
+
+  # Model Settings for GLM-4.6
+  # Official recommended settings from Z.ai:
+  # - temperature: 1.0
+  # - top_p: 0.95 (recommended for coding)
+  # - top_k: 40 (recommended for coding)
+  TEMPERATURE: "1.0"
+  TOP_P: "0.95"
+  TOP_K: "40"
+
+  # Context size (max 200K for GLM-4.6, but start with 16384 for T4)
+  CTX_SIZE: "16384"
+
+  # GPU Configuration
+  # Number of layers to offload to GPU (99 = all non-MoE layers)
+  N_GPU_LAYERS: "99"
+
+  # MoE CPU offloading pattern
+  # ".ffn_.*_exps.=CPU" - Offload ALL MoE layers (uses least VRAM, ~24GB for 1x T4)
+  # ".ffn_(up|down)_exps.=CPU" - Offload up+down MoE layers (needs more VRAM)
+  # ".ffn_(up)_exps.=CPU" - Offload only up MoE layers (needs even more VRAM)
+  # Remove for full GPU (needs 135GB+ VRAM for UD-Q2_K_XL)
+  MoE_OFFLOAD: ".ffn_.*_exps.=CPU"
+
+  # CPU threads (-1 = auto-detect max threads)
+  THREADS: "-1"
+
+  # Flash Attention (on for better performance)
+  FLASH_ATTN: "on"
+
+  # Served model name (for OpenAI API compatibility)
+  SERVED_MODEL_NAME: "glm-4.6"
+
+  # Random seed for reproducibility
+  SEED: "3407"

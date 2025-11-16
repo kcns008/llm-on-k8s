@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-models-glm46
+  labels:
+    app: glm-4.6-llamacpp
+    purpose: llm-inference
+  annotations:
+    description: "Namespace for GLM-4.6 LLM deployment with llama.cpp"

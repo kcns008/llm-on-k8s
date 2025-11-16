@@ -1,0 +1,18 @@
+# Sensitive files
+*.token
+*.key
+*secret*.yaml
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db

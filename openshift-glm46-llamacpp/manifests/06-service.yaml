@@ -1,0 +1,22 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: glm46-llamacpp
+  namespace: llm-models-glm46
+  labels:
+    app: glm-4.6-llamacpp
+    component: inference-server
+  annotations:
+    description: "OpenAI-compatible API service for GLM-4.6 via llama.cpp"
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      protocol: TCP
+  selector:
+    app: glm-4.6-llamacpp
+    component: inference-server
+  sessionAffinity: None
