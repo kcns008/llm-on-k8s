@@ -1,0 +1,30 @@
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: kimi-k2-llamacpp
+  namespace: llm-models-llamacpp
+  labels:
+    app: kimi-k2-llamacpp
+    component: inference-server
+  annotations:
+    description: "External HTTPS access to Kimi K2 llama.cpp inference API"
+    haproxy.router.openshift.io/timeout: "5m"
+    haproxy.router.openshift.io/balance: "roundrobin"
+spec:
+  # Uncomment to specify custom hostname
+  # host: kimi-k2-llamacpp.apps.your-cluster.com
+
+  to:
+    kind: Service
+    name: kimi-k2-llamacpp
+    weight: 100
+
+  port:
+    targetPort: http
+
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+  wildcardPolicy: None
