@@ -1,0 +1,17 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: kimi-k2-0905-model-cache
+  namespace: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 300Gi
+  # Uncomment and modify based on your storage class
+  # storageClassName: gp3
+  volumeMode: Filesystem

@@ -1,0 +1,28 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kimi-k2-0905-config
+  namespace: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+data:
+  # Model configuration
+  MODEL_NAME: "moonshotai/Kimi-K2-Instruct-0905"
+  SERVED_MODEL_NAME: "moonshotai/Kimi-K2-Instruct-0905"
+
+  # vLLM settings for GPU deployment
+  GPU_MEMORY_UTILIZATION: "0.90"
+  MAX_MODEL_LEN: "16384"  # Kimi K2 supports up to 128K context
+  TENSOR_PARALLEL_SIZE: "1"  # Single GPU (adjust for multi-GPU)
+
+  # API settings
+  HOST: "0.0.0.0"
+  PORT: "8000"
+
+  # Performance tuning
+  SWAP_SPACE: "16"  # GB of CPU swap space for larger models
+  ENFORCE_EAGER: "false"
+
+  # Logging
+  LOG_LEVEL: "info"

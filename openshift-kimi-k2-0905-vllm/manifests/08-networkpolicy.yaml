@@ -1,0 +1,57 @@
+---
+# Network policy for Kimi K2 0905 deployment
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kimi-k2-0905-netpol
+  namespace: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+spec:
+  podSelector:
+    matchLabels:
+      app: kimi-k2-0905
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow traffic from OpenShift router
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              network.openshift.io/policy-group: ingress
+      ports:
+        - protocol: TCP
+          port: 8000
+
+    # Allow traffic from same namespace (for debugging)
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8000
+
+  egress:
+    # Allow DNS resolution
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openshift-dns
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow HTTPS for model download (HuggingFace)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    # Allow HTTP for model download
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
