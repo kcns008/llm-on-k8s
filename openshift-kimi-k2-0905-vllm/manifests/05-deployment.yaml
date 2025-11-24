@@ -1,0 +1,237 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kimi-k2-0905-vllm
+  namespace: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+    component: inference-server
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Important for GPU workloads
+  selector:
+    matchLabels:
+      app: kimi-k2-0905
+      component: inference-server
+  template:
+    metadata:
+      labels:
+        app: kimi-k2-0905
+        component: inference-server
+      annotations:
+        description: "Kimi K2 Instruct 0905 LLM inference server using vLLM"
+    spec:
+      # Security context for OpenShift
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+
+      # Node selector for GPU nodes
+      nodeSelector:
+        # Uncomment and modify based on your cluster's GPU node labels
+        # nvidia.com/gpu.present: "true"
+        # gpu-type: tesla-t4
+
+      # Tolerations for GPU nodes
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+
+      containers:
+      - name: vllm-server
+        # Using vLLM OpenAI-compatible server
+        image: vllm/vllm-openai:latest
+        imagePullPolicy: Always
+
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+
+        command:
+          - python3
+          - -m
+          - vllm.entrypoints.openai.api_server
+
+        args:
+          - --model=$(MODEL_NAME)
+          - --served-model-name=$(SERVED_MODEL_NAME)
+          - --host=$(HOST)
+          - --port=$(PORT)
+          - --trust-remote-code
+          - --gpu-memory-utilization=$(GPU_MEMORY_UTILIZATION)
+          - --max-model-len=$(MAX_MODEL_LEN)
+          - --tensor-parallel-size=$(TENSOR_PARALLEL_SIZE)
+          - --swap-space=$(SWAP_SPACE)
+          - --dtype=auto
+          - --kv-cache-dtype=auto
+          - --disable-log-requests
+
+        env:
+          - name: MODEL_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: MODEL_NAME
+          - name: SERVED_MODEL_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: SERVED_MODEL_NAME
+          - name: HOST
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: HOST
+          - name: PORT
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: PORT
+          - name: GPU_MEMORY_UTILIZATION
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: GPU_MEMORY_UTILIZATION
+          - name: MAX_MODEL_LEN
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: MAX_MODEL_LEN
+          - name: TENSOR_PARALLEL_SIZE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: TENSOR_PARALLEL_SIZE
+          - name: SWAP_SPACE
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: SWAP_SPACE
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: huggingface-token
+                key: HF_TOKEN
+          # Cache directory
+          - name: HF_HOME
+            value: /model-cache
+          - name: TRANSFORMERS_CACHE
+            value: /model-cache/transformers
+          - name: HF_DATASETS_CACHE
+            value: /model-cache/datasets
+
+        ports:
+          - name: http
+            containerPort: 8000
+            protocol: TCP
+
+        resources:
+          requests:
+            nvidia.com/gpu: 1
+            memory: 32Gi
+            cpu: 4
+          limits:
+            nvidia.com/gpu: 1
+            memory: 64Gi
+            cpu: 8
+
+        volumeMounts:
+          - name: model-cache
+            mountPath: /model-cache
+          - name: shm
+            mountPath: /dev/shm
+
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 600  # Model loading takes time
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 600
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: kimi-k2-0905-model-cache
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 10Gi
+
+      # Init container to pre-download model (optional but recommended)
+      initContainers:
+      - name: model-downloader
+        image: python:3.11-slim
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+              - ALL
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -e
+            echo "Installing huggingface-hub..."
+            pip install -q huggingface-hub
+
+            echo "Downloading model: ${MODEL_NAME}"
+            python3 -c "
+            from huggingface_hub import snapshot_download
+            import os
+
+            token = os.environ.get('HUGGING_FACE_HUB_TOKEN')
+            model_name = os.environ.get('MODEL_NAME')
+            cache_dir = '/model-cache'
+
+            print(f'Downloading {model_name} to {cache_dir}...')
+            snapshot_download(
+                repo_id=model_name,
+                cache_dir=cache_dir,
+                token=token,
+                resume_download=True,
+                local_files_only=False
+            )
+            print('Model download complete!')
+            "
+        env:
+          - name: MODEL_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: kimi-k2-0905-config
+                key: MODEL_NAME
+          - name: HUGGING_FACE_HUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: huggingface-token
+                key: HF_TOKEN
+          - name: HF_HOME
+            value: /model-cache
+        volumeMounts:
+          - name: model-cache
+            mountPath: /model-cache
+        resources:
+          requests:
+            memory: 2Gi
+            cpu: 1
+          limits:
+            memory: 4Gi
+            cpu: 2

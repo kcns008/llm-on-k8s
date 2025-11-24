@@ -1,0 +1,10 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+    deployment: vllm
+  annotations:
+    description: "Namespace for Kimi K2 Instruct 0905 LLM deployment with vLLM"

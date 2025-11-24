@@ -1,0 +1,19 @@
+---
+# ServiceMonitor for Prometheus metrics (optional)
+# Requires Prometheus Operator to be installed
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kimi-k2-0905-metrics
+  namespace: llm-kimi-k2-0905
+  labels:
+    app: kimi-k2-0905
+spec:
+  selector:
+    matchLabels:
+      app: kimi-k2-0905
+      component: inference-server
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
